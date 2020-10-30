@@ -1,0 +1,1 @@
+# Akka Cluster Sharding Running in Minikube

@@ -7,11 +7,22 @@
 
 package com.ksmti.poc
 
+import com.ksmti.poc.PublicEventsDirectory.PublicEvent
+import com.ksmti.poc.actor.PublicEventEntity.ResponseMessage
 import com.typesafe.config.{Config, ConfigFactory}
+import org.joda.time.DateTime
 
 import scala.util.{Failure, Success, Try}
-
 import scala.jdk.CollectionConverters._
+
+case class EventsProgram(program: Seq[PublicEvent],
+                         timeStamp: Option[String] = None)
+    extends ResponseMessage {
+
+  def stamp: EventsProgram = {
+    copy(timeStamp = Some(DateTime.now().toDateTimeISO.toString()))
+  }
+}
 
 object PublicEventsDirectory {
 
@@ -35,7 +46,7 @@ object PublicEventsDirectory {
 
   lazy val mspProgram: Map[PublicEventID, PublicEvent] = {
     Try {
-      val config: Config = ConfigFactory.parseResources("program.conf")
+      val config: Config = ConfigFactory.load()
       config
         .getConfigList("publicEvents.program")
         .asScala
@@ -49,6 +60,5 @@ object PublicEventsDirectory {
         Map.empty
     }
   }
-
   val idGenerator: String => String = _.hashCode.toString
 }

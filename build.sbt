@@ -24,11 +24,11 @@ lazy val managementVersion = "1.0.9"
 
 // Akka Actors / Remote / Cluster Libs
 lazy val akkaLibs = Seq(
-  "com.typesafe.akka" %% "akka-actor" % akkaVersion,
-  "com.typesafe.akka" %% "akka-remote" % akkaVersion,
-  "com.typesafe.akka" %% "akka-cluster" % akkaVersion,
-  "com.typesafe.akka" %% "akka-cluster-sharding" % akkaVersion,
+  "com.typesafe.akka" %% "akka-actor-typed" % akkaVersion,
+  "com.typesafe.akka" %% "akka-cluster-typed" % akkaVersion,
+  "com.typesafe.akka" %% "akka-cluster-sharding-typed" % akkaVersion,
   "com.typesafe.akka" %% "akka-discovery" % akkaVersion,
+  "ch.qos.logback" % "logback-classic" % "1.2.3"
 )
 
 // Akka Http Libs
@@ -50,9 +50,8 @@ lazy val serializationLibs = Seq("com.twitter" %% "chill-akka" % "0.9.5")
 
 // Testing Libs
 lazy val testingLibs = Seq(
-  "org.scalatest" %% "scalatest" % "3.1.1" % Test,
-  "com.typesafe.akka" %% "akka-testkit" % akkaVersion % Test,
-  "com.typesafe.akka" %% "akka-multi-node-testkit" % akkaVersion % Test
+  "org.scalatest" %% "scalatest" % "3.1.4" % Test,
+  "com.typesafe.akka" %% "akka-actor-testkit-typed" % akkaVersion % Test
 )
 
 libraryDependencies ++= (akkaLibs ++ akkaHttp ++ managementLibs ++ serializationLibs ++ testingLibs)

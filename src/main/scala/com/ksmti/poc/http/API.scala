@@ -9,36 +9,37 @@ package com.ksmti.poc.http
 
 import java.util.concurrent.TimeUnit
 
-import akka.cluster.sharding.ShardRegion
+import akka.actor.typed.{ActorRef, Scheduler}
+import akka.actor.typed.scaladsl.AskPattern.Askable
+import akka.cluster.sharding.typed.ShardingEnvelope
 import akka.event.LoggingAdapter
 import akka.http.scaladsl.model.StatusCodes
 import akka.http.scaladsl.server.Directives._
 import akka.http.scaladsl.server.{Route, StandardRoute}
-import akka.pattern.ask
 import akka.util.Timeout
 import com.ksmti.poc.actor.PublicEventEntity.{
   AvailableStock,
   InvalidEvent,
   InvalidReservation,
+  PublicEventStock,
+  RequestMessage,
+  ResponseMessage,
+  SeatsReservation,
   SuccessReservation
-}
-import com.ksmti.poc.actor.PublicEventsManager.{
-  ConsultProgram,
-  EventsProgram,
-  ReservationRequest,
-  StockRequest
 }
 
 import scala.util.{Failure, Success}
 import spray.json._
 import akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport._
+import com.ksmti.poc.{EventsProgram, PublicEventsDirectory}
 import com.ksmti.poc.PublicEventsDirectory.PublicEvent
 
 trait MessageProtocols extends DefaultJsonProtocol {
-  implicit val scalaEventFormat: RootJsonFormat[PublicEvent] = jsonFormat5(
+
+  implicit val publicEventFormat: RootJsonFormat[PublicEvent] = jsonFormat5(
     PublicEvent.apply)
 
-  implicit val scalaEventsFormat: RootJsonFormat[EventsProgram] = jsonFormat2(
+  implicit val eventsProgramFormat: RootJsonFormat[EventsProgram] = jsonFormat2(
     EventsProgram)
 
   implicit val successReservationFormat: RootJsonFormat[SuccessReservation] =
@@ -54,9 +55,14 @@ trait API extends MessageProtocols {
 
   protected def log: LoggingAdapter
 
-  implicit val timeout: Timeout = Timeout(10L, TimeUnit.SECONDS)
+  protected implicit def scheduler: Scheduler
 
-  protected def shardRegion: akka.actor.ActorRef
+  protected implicit val timeout: Timeout = Timeout(10L, TimeUnit.SECONDS)
+
+  private lazy val program = EventsProgram(
+    PublicEventsDirectory.mspProgram.values.toSeq)
+
+  protected def shardRegion: ActorRef[ShardingEnvelope[RequestMessage]]
 
   private val commonResponse: ResponseFunction => ResponseFunction = {
     _.orElse({
@@ -73,9 +79,12 @@ trait API extends MessageProtocols {
     })
   }
 
-  private def requestAndThen[T](command: T)(
+  private def requestAndThen(
+      entityId: String,
+      command: ActorRef[ResponseMessage] => RequestMessage)(
       responseFunction: => ResponseFunction): Route = {
-    onComplete(shardRegion ? command) {
+    onComplete(shardRegion.ask[ResponseMessage](sdr =>
+      ShardingEnvelope(entityId, command(sdr)))) {
       case Success(result) =>
         commonResponse(responseFunction)(result)
       case Failure(th) =>
@@ -85,30 +94,13 @@ trait API extends MessageProtocols {
   }
 
   protected def routes: Route =
-    path("status") {
-      get {
-        requestAndThen(ShardRegion.GetShardRegionState) {
-          case ShardRegion.CurrentShardRegionState(shards) =>
-            complete(JsArray(shards.map { s =>
-              JsObject(("id", JsString(s.shardId)),
-                       ("entities",
-                        JsArray(s.entityIds.map(JsString(_)).toSeq: _*)))
-            }.toSeq: _*))
-        }
-      }
+    path("upcomingEvents") {
+      get(complete(program.stamp))
     } ~
-      path("upcomingEvents") {
-        get {
-          requestAndThen(ConsultProgram) {
-            case events: EventsProgram =>
-              complete(events)
-          }
-        }
-      } ~
       path("ticketsStock") {
         parameters("event") { event =>
           get {
-            requestAndThen(StockRequest(event)) {
+            requestAndThen(event, PublicEventStock) {
               case stock: AvailableStock =>
                 complete(stock)
             }
@@ -118,7 +110,7 @@ trait API extends MessageProtocols {
       path("reserveTickets") {
         parameters(("event", "seats".as[Int] ? 1)) { (id, seats) =>
           post {
-            requestAndThen(ReservationRequest(id, seats)) {
+            requestAndThen(id, SeatsReservation(seats, _)) {
               case resp: SuccessReservation =>
                 complete(resp)
             }

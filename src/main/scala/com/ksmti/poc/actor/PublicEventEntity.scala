@@ -7,27 +7,27 @@
 
 package com.ksmti.poc.actor
 
-import akka.actor.{Actor, ActorLogging}
+import akka.actor.typed.{ActorRef, Behavior}
+import akka.actor.typed.scaladsl.Behaviors
 import com.ksmti.poc.PublicEventsDirectory
-import com.ksmti.poc.actor.PublicEventEntity.{
-  AvailableStock,
-  InvalidReservation,
-  InvalidEvent,
-  PublicEventStock,
-  SeatsReservation,
-  SuccessReservation
-}
 import org.joda.time.DateTime
 
 object PublicEventEntity {
 
-  object ReservationResponse
+  trait RequestMessage {
+    def replyTo: ActorRef[ResponseMessage]
+  }
 
-  case class SeatsReservation(seats: Int = 1) extends RequestMessage {
+  trait ResponseMessage
+
+  case class SeatsReservation(seats: Int = 1,
+                              replyTo: ActorRef[ResponseMessage])
+      extends RequestMessage {
     require(seats > 0)
   }
 
-  object PublicEventStock extends RequestMessage
+  case class PublicEventStock(replyTo: ActorRef[ResponseMessage])
+      extends RequestMessage
 
   case class AvailableStock(stock: Int, timeStamp: String)
       extends ResponseMessage
@@ -39,46 +39,40 @@ object PublicEventEntity {
 
   object InvalidReservation extends ResponseMessage
 
-}
+  def apply(entityId: String, committed: Int = 0): Behavior[RequestMessage] =
+    Behaviors.setup { context =>
+      val initialStock: Int = PublicEventsDirectory.mspProgram
+        .get(entityId)
+        .map(_.stock)
+        .getOrElse(0)
 
-class PublicEventEntity extends Actor with ActorLogging {
+      Behaviors.receiveMessage[RequestMessage] {
 
-  private lazy val eventID: String = self.path.name
+        case rq if initialStock == 0 =>
+          rq.replyTo ! InvalidEvent
+          Behaviors.same
 
-  private lazy val initialStock: Int = PublicEventsDirectory.mspProgram
-    .get(eventID)
-    .map(_.stock)
-    .getOrElse(0)
+        case PublicEventStock(replyTo) =>
+          context.log.debug("COMMITTED [{}]", committed)
+          replyTo ! AvailableStock(initialStock - committed,
+                                   DateTime.now.toDateTimeISO.toString())
+          Behaviors.same
 
-  override def receive: Receive = {
-    case _ =>
-      sender() ! InvalidEvent
-  }
+        case SeatsReservation(_, replyTo) if committed == initialStock =>
+          context.log.debug("COMMITTED [{}]", committed)
+          replyTo ! InvalidReservation
+          Behaviors.same
 
-  private lazy val eventBehavior: Int => Receive = { committed =>
-    {
-      case PublicEventStock =>
-        log.debug("COMMITTED [{}]", committed)
-        sender() ! AvailableStock(initialStock - committed,
-                                  DateTime.now.toDateTimeISO.toString())
-
-      case SeatsReservation(seats) =>
-        log.debug("COMMITTED [{}]", committed)
-        if (initialStock >= committed + seats) {
-          context.become(eventBehavior(committed + seats))
-          sender() ! SuccessReservation(DateTime.now().getMillis,
-                                        DateTime.now.toDateTimeISO.toString())
-        } else {
-          sender() ! InvalidReservation
-        }
+        case SeatsReservation(seats, replyTo) =>
+          context.log.debug("COMMITTED [{}]", committed)
+          if (initialStock >= committed + seats) {
+            replyTo ! SuccessReservation(DateTime.now().getMillis,
+                                         DateTime.now.toDateTimeISO.toString())
+            apply(entityId, committed + seats)
+          } else {
+            replyTo ! InvalidReservation
+            Behaviors.same
+          }
+      }
     }
-  }
-
-  override def preStart(): Unit = {
-    log.debug("Starting PublicEventEntity ID [{}]", eventID)
-    if (initialStock > 0) {
-      context.become(eventBehavior(0))
-    }
-    super.preStart()
-  }
 }

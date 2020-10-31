@@ -1,51 +1,49 @@
-/*
- *  Copyright (C) 2015-2019 KSMTI
+/*  Copyright (C) 2015-2019 KSMTI
  *
  *  <http://www.ksmti.com>
- *
  */
 
 package com.ksmti.poc.actor
 
-import akka.actor.{ActorRef, ActorSystem, Props}
-import akka.testkit.TestKit
+import akka.actor.testkit.typed.scaladsl.ActorTestKit
+import akka.actor.typed.{ActorRef, Scheduler}
+import akka.actor.typed.scaladsl.AskPattern.Askable
+import akka.util.Timeout
+import com.ksmti.poc.PublicEventsDirectory
+import com.ksmti.poc.PublicEventsDirectory.PublicEvent
 import com.ksmti.poc.actor.PublicEventEntity.{
   AvailableStock,
   InvalidEvent,
   InvalidReservation,
   PublicEventStock,
+  RequestMessage,
   SeatsReservation,
   SuccessReservation
 }
-import akka.pattern.gracefulStop
-
-import scala.concurrent.duration._
-import akka.pattern.ask
-import akka.util.Timeout
-import com.ksmti.poc.PublicEventsDirectory
-import com.ksmti.poc.PublicEventsDirectory.PublicEvent
-import org.scalatest.compatible.Assertion
-import org.scalatest.wordspec.AsyncWordSpecLike
-import org.scalatest.BeforeAndAfterAll
+import org.scalatest.{Assertion, BeforeAndAfterAll}
 import org.scalatest.matchers.should.Matchers
+import org.scalatest.wordspec.AsyncWordSpecLike
 
-import scala.concurrent.Future
+import scala.concurrent.{ExecutionContext, Future}
+import scala.concurrent.duration.DurationInt
 
 class PublicEventEntitySpec
-    extends TestKit(ActorSystem("ScalaEventEntitySpec"))
-    with AsyncWordSpecLike
-    with Matchers
-    with BeforeAndAfterAll {
+    extends AsyncWordSpecLike
+    with BeforeAndAfterAll
+    with Matchers {
 
-  import system.dispatcher
+  private lazy val testKit = ActorTestKit()
 
-  implicit val timeOut: Timeout = 3.second
+  implicit lazy val timeOut: Timeout = 3.second
 
-  private val stopActorRef: ActorRef => Future[Assertion] = { ref =>
-    gracefulStop(ref, 3.second) map (_ => succeed) recover {
-      case th =>
-        fail(th)
-    }
+  implicit lazy val scheduler: Scheduler = testKit.system.scheduler
+
+  implicit lazy val ec: ExecutionContext = testKit.system.executionContext
+
+  private val stopActorRef: ActorRef[RequestMessage] => Future[Assertion] = {
+    ref =>
+      testKit.stop(ref)
+      Future(succeed)
   }
 
   private def processResponse[T](
@@ -64,11 +62,10 @@ class PublicEventEntitySpec
         PublicEvent("Undefined", "Undefined", "Undefined", 0, 0.0)
       )
 
-  "ScalaEventEntity " should {
-
-    " InvalidScalaEvent " in {
+  "PublicEventEntity " should {
+    " InvalidEvent " in {
       val entityActor =
-        system.actorOf(Props[PublicEventEntity]())
+        testKit.spawn(PublicEventEntity("sample"))
 
       (entityActor ? PublicEventStock).flatMap {
         processResponse {
@@ -79,10 +76,8 @@ class PublicEventEntitySpec
     }
 
     " ScalaEventStock " in {
-
-      val entityActor =
-        system.actorOf(Props[PublicEventEntity](),
-                       PublicEventsDirectory.idGenerator(event.name))
+      val entityActor = testKit.spawn(
+        PublicEventEntity(PublicEventsDirectory.idGenerator(event.name)))
 
       (entityActor ? PublicEventStock).flatMap {
         processResponse {
@@ -94,44 +89,35 @@ class PublicEventEntitySpec
     }
 
     " SeatsReservation" in {
-      val entityActor =
-        system.actorOf(Props[PublicEventEntity](),
-                       PublicEventsDirectory.idGenerator(event.name))
+      val entityActor = testKit.spawn(
+        PublicEventEntity(PublicEventsDirectory.idGenerator(event.name)))
 
-      println(event)
-
-      (entityActor ? SeatsReservation(event.stock + 1)).map {
+      (entityActor ? (SeatsReservation(event.stock + 1, _))).map {
         case InvalidReservation =>
           succeed
         case whatever =>
           fail(new UnsupportedOperationException(whatever.toString))
       }
 
-      (entityActor ? SeatsReservation(event.stock)).map {
+      (entityActor ? (SeatsReservation(event.stock - 1, _))).map {
         case _: SuccessReservation =>
           succeed
         case whatever =>
           fail(new UnsupportedOperationException(whatever.toString))
       }
-
-      (entityActor ? SeatsReservation(1)).flatMap {
-        processResponse {
-          case InvalidReservation =>
-            stopActorRef(entityActor)
-        }
-      }
+      stopActorRef(entityActor)
     }
 
     " Serial Operations " in {
       val entityActor =
-        system.actorOf(Props[PublicEventEntity](),
-                       PublicEventsDirectory.idGenerator(event.name))
+        testKit.spawn(
+          PublicEventEntity(PublicEventsDirectory.idGenerator(event.name)))
 
       def testReservation(attempts: Long,
                           attempt: Long = 1): Future[Assertion] = {
 
         if (attempt <= attempts) {
-          (entityActor ? SeatsReservation(1)).flatMap {
+          (entityActor ? (SeatsReservation(1, _))).flatMap {
             processResponse {
               case _: SuccessReservation =>
                 (entityActor ? PublicEventStock).flatMap {
@@ -144,7 +130,7 @@ class PublicEventEntitySpec
             }
           }
         } else {
-          (entityActor ? SeatsReservation(1)).flatMap {
+          (entityActor ? (SeatsReservation(1, _))).flatMap {
             processResponse {
               case InvalidReservation =>
                 succeed
@@ -159,12 +145,12 @@ class PublicEventEntitySpec
 
     " Parallel Operations " in {
       val entityActor =
-        system.actorOf(Props[PublicEventEntity](),
-                       PublicEventsDirectory.idGenerator(event.name))
+        testKit.spawn(
+          PublicEventEntity(PublicEventsDirectory.idGenerator(event.name)))
 
       Future
         .traverse(1 to event.stock) { _ =>
-          (entityActor ? SeatsReservation()).flatMap {
+          (entityActor ? (SeatsReservation(1, _))).flatMap {
             case _: SuccessReservation =>
               (entityActor ? PublicEventStock).map {
                 case AvailableStock(stk, _) if stk <= event.stock =>
@@ -181,7 +167,5 @@ class PublicEventEntitySpec
     }
   }
 
-  override protected def afterAll(): Unit = {
-    TestKit.shutdownActorSystem(system)
-  }
+  override def afterAll(): Unit = testKit.shutdownTestKit()
 }

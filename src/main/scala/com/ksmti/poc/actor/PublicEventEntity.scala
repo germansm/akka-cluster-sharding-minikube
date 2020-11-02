@@ -9,10 +9,14 @@ package com.ksmti.poc.actor
 
 import akka.actor.typed.{ActorRef, Behavior}
 import akka.actor.typed.scaladsl.Behaviors
+import akka.cluster.sharding.typed.scaladsl.EntityTypeKey
 import com.ksmti.poc.PublicEventsDirectory
 import org.joda.time.DateTime
 
 object PublicEventEntity {
+
+  val TypeKey: EntityTypeKey[RequestMessage] =
+    EntityTypeKey[RequestMessage]("PublicEventEntity")
 
   trait RequestMessage {
     def replyTo: ActorRef[ResponseMessage]

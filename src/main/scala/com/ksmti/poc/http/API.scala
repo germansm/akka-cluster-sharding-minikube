@@ -11,7 +11,16 @@ import java.util.concurrent.TimeUnit
 
 import akka.actor.typed.{ActorRef, Scheduler}
 import akka.actor.typed.scaladsl.AskPattern.Askable
-import akka.cluster.sharding.typed.ShardingEnvelope
+import akka.cluster.sharding.ShardRegion.{
+  ClusterShardingStats,
+  CurrentShardRegionState
+}
+import akka.cluster.sharding.typed.{
+  ClusterShardingQuery,
+  GetClusterShardingStats,
+  GetShardRegionState,
+  ShardingEnvelope
+}
 import akka.event.LoggingAdapter
 import akka.http.scaladsl.model.StatusCodes
 import akka.http.scaladsl.server.Directives._
@@ -33,6 +42,7 @@ import spray.json._
 import akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport._
 import com.ksmti.poc.{EventsProgram, PublicEventsDirectory}
 import com.ksmti.poc.PublicEventsDirectory.PublicEvent
+import com.ksmti.poc.actor.PublicEventEntity
 
 trait MessageProtocols extends DefaultJsonProtocol {
 
@@ -64,6 +74,8 @@ trait API extends MessageProtocols {
 
   protected def shardRegion: ActorRef[ShardingEnvelope[RequestMessage]]
 
+  protected def shardState: ActorRef[ClusterShardingQuery]
+
   private val commonResponse: ResponseFunction => ResponseFunction = {
     _.orElse({
 
@@ -94,9 +106,48 @@ trait API extends MessageProtocols {
   }
 
   protected def routes: Route =
-    path("upcomingEvents") {
-      get(complete(program.stamp))
+    path("status") {
+      get {
+        onComplete(shardState.ask[CurrentShardRegionState](replyTo =>
+          GetShardRegionState(PublicEventEntity.TypeKey, replyTo))) {
+          case Success(currentShardRegionState) =>
+            complete(JsArray(currentShardRegionState.shards.map { s =>
+              JsObject(("shardId", JsString(s.shardId)),
+                       ("entityIds",
+                        JsArray(s.entityIds.map(JsString(_)).toSeq: _*)))
+            }.toSeq: _*))
+          case Failure(th) =>
+            th.printStackTrace()
+            complete(StatusCodes.InternalServerError)
+        }
+      }
     } ~
+      path("stats") {
+        get {
+          onComplete(
+            shardState.ask[ClusterShardingStats](replyTo =>
+              GetClusterShardingStats(PublicEventEntity.TypeKey,
+                                      timeout.duration,
+                                      replyTo))) {
+            case Success(clusterShardingStats) =>
+              complete(JsArray(clusterShardingStats.regions.map { region =>
+                JsObject(
+                  ("Address", JsString(region._1.toString)),
+                  ("Shards", JsArray(region._2.stats.map { s =>
+                    JsObject(("ShardId", JsString(s._1)),
+                             ("Entities", JsNumber(s._2)))
+                  }.toSeq: _*))
+                )
+              }.toSeq: _*))
+            case Failure(th) =>
+              th.printStackTrace()
+              complete(StatusCodes.InternalServerError)
+          }
+        }
+      } ~
+      path("upcomingEvents") {
+        get(complete(program.stamp))
+      } ~
       path("ticketsStock") {
         parameters("event") { event =>
           get {

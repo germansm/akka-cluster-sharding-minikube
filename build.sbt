@@ -1,8 +1,9 @@
+
 organization := "com.ksmti.poc"
 
 scalaVersion := "2.13.3"
 
-version := "1.0.0"
+version := "0.0.1"
 
 scalacOptions in Compile ++= Seq(
   "-deprecation",
@@ -42,7 +43,8 @@ lazy val managementLibs = Seq(
   "com.lightbend.akka.management" %% "akka-management" % managementVersion,
   "com.lightbend.akka.management" %% "akka-management-cluster-http" % managementVersion,
   "com.lightbend.akka.management" %% "akka-management-cluster-bootstrap" % managementVersion,
-  "com.lightbend.akka.discovery" %% "akka-discovery-aws-api" % managementVersion
+  "com.lightbend.akka.discovery" %% "akka-discovery-aws-api" % managementVersion,
+  "com.lightbend.akka.discovery" %% "akka-discovery-kubernetes-api" % managementVersion
 )
 
 // Chill-Akka / Kryo Serializer Libs
@@ -63,10 +65,6 @@ mainClass in (Compile, run) := Some("com.ksmti.poc.PublicEventsApp")
 // disable parallel tests
 parallelExecution in Test := false
 
-mainClass in assembly := Some("com.ksmti.poc.PublicEventsApp")
-
-test in assembly := {}
-
 headerLicense := Some(HeaderLicense.Custom("""| Copyright (C) 2015-2020 KSMTI
                                               |
                                               | <http://www.ksmti.com>
@@ -74,6 +72,19 @@ headerLicense := Some(HeaderLicense.Custom("""| Copyright (C) 2015-2020 KSMTI
 scalafmtOnCompile := true
 
 lazy val `PublicEvents` = project.in(file(".")).enablePlugins(AutomateHeaderPlugin)
+
+enablePlugins(JavaServerAppPackaging, DockerPlugin)
+
+// Ports: Http, Management, Artery
+dockerExposedPorts := Seq(8080, 8558, 25520)
+dockerUpdateLatest := true
+dockerUsername := sys.props.get("docker.username")
+dockerRepository := sys.props.get("docker.registry")
+dockerBaseImage := "adoptopenjdk:11-jre-hotspot"
+
+mainClass in assembly := Some("com.ksmti.poc.PublicEventsApp")
+
+test in assembly := {}
 
 assemblyMergeStrategy in assembly := {
   case "module-info.class" => MergeStrategy.last

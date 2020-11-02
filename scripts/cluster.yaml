@@ -1,0 +1,71 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: public-events-deployment
+  namespace: ksmti
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: public-events
+  template:
+    metadata:
+      labels:
+        app: public-events
+    spec:
+      containers:
+        - name: public-events-container
+          image: publicevents:latest
+          imagePullPolicy: Never
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: management
+            periodSeconds: 10
+            failureThreshold: 3
+            initialDelaySeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /alive
+              port: management
+            periodSeconds: 10
+            failureThreshold: 5
+            initialDelaySeconds: 20
+          ports:
+            - name: management
+              containerPort: 8558
+              protocol: TCP
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          env:
+            - name: NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: REQUIRED_CONTACT_POINT_NR
+              value: "3"
+
+---
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: pod-reader
+  namespace: ksmti
+rules:
+  - apiGroups: [""] # "" indicates the core API group
+    resources: ["pods"]
+    verbs: ["get", "watch", "list"]
+---
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: read-pods
+  namespace: ksmti
+subjects:
+  - kind: User
+    name: system:serviceaccount:ksmti:default
+roleRef:
+  kind: Role
+  name: pod-reader
+  apiGroup: rbac.authorization.k8s.io

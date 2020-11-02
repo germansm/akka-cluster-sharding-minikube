@@ -7,10 +7,12 @@ spec:
   replicas: 3
   selector:
     matchLabels:
+      # Pods Selector labels
       app: public-events
   template:
     metadata:
       labels:
+        # Actor System Name
         app: public-events
     spec:
       containers:
@@ -69,3 +71,19 @@ roleRef:
   kind: Role
   name: pod-reader
   apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: public-events
+  name: public-events-service
+spec:
+  ports:
+    - name: http
+      port: 8080
+      protocol: TCP
+      targetPort: 8080
+  selector:
+    app: public-events
+  type: LoadBalancer

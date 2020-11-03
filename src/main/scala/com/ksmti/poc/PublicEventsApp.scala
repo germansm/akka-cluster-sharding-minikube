@@ -72,7 +72,10 @@ object PublicEventsApp extends App {
     args.headOption.fold(ConfigFactory.load()) { _ =>
       ConfigFactory
         .parseString(
-          s"""akka.remote.artery.canonical.hostname="$hostname""""
+          s"""
+             |akka.remote.artery.canonical.hostname="$hostname"
+             |akka.management.http.hostname="$hostname"
+             |""".stripMargin
         )
         .withFallback(ConfigFactory.load())
     }

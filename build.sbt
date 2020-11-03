@@ -29,8 +29,10 @@ lazy val akkaLibs = Seq(
   "com.typesafe.akka" %% "akka-cluster-typed" % akkaVersion,
   "com.typesafe.akka" %% "akka-cluster-sharding-typed" % akkaVersion,
   "com.typesafe.akka" %% "akka-discovery" % akkaVersion,
+  "com.typesafe.akka" %% "akka-slf4j" % "2.6.10",
   "ch.qos.logback" % "logback-classic" % "1.2.3"
 )
+
 
 // Akka Http Libs
 lazy val akkaHttp = Seq(

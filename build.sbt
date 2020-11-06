@@ -1,3 +1,5 @@
+import com.typesafe.sbt.SbtMultiJvm.multiJvmSettings
+import com.typesafe.sbt.SbtMultiJvm.MultiJvmKeys.MultiJvm
 
 organization := "com.ksmti.poc"
 
@@ -33,7 +35,6 @@ lazy val akkaLibs = Seq(
   "ch.qos.logback" % "logback-classic" % "1.2.3"
 )
 
-
 // Akka Http Libs
 lazy val akkaHttp = Seq(
   "com.typesafe.akka" %% "akka-http" % httpVersion,
@@ -55,6 +56,8 @@ lazy val serializationLibs = Seq("com.twitter" %% "chill-akka" % "0.9.5")
 // Testing Libs
 lazy val testingLibs = Seq(
   "org.scalatest" %% "scalatest" % "3.1.4" % Test,
+  "com.typesafe.akka" %% "akka-actor-testkit-typed" % akkaVersion % Test,
+  "com.typesafe.akka" %% "akka-multi-node-testkit" % akkaVersion % Test,
   "com.typesafe.akka" %% "akka-actor-testkit-typed" % akkaVersion % Test
 )
 
@@ -73,7 +76,12 @@ headerLicense := Some(HeaderLicense.Custom("""| Copyright (C) 2015-2020 KSMTI
     """.stripMargin))
 scalafmtOnCompile := true
 
-lazy val `PublicEvents` = project.in(file(".")).enablePlugins(AutomateHeaderPlugin)
+lazy val `PublicEvents` = project
+  .in(file("."))
+  .enablePlugins(AutomateHeaderPlugin)
+  .enablePlugins(MultiJvmPlugin)
+  .enablePlugins(MultiJvmPlugin)
+  .configs(MultiJvm)
 
 enablePlugins(JavaServerAppPackaging, DockerPlugin)
 

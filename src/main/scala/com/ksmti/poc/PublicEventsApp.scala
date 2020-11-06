@@ -10,6 +10,7 @@ package com.ksmti.poc
 import akka.actor
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
 import akka.actor.typed.{ActorRef, ActorSystem, Scheduler}
+import akka.cluster.ddata.typed.scaladsl.{DistributedData, Replicator}
 import akka.cluster.sharding.typed.{ClusterShardingQuery, ShardingEnvelope}
 import akka.cluster.sharding.typed.scaladsl.{ClusterSharding, Entity}
 import akka.event.LoggingAdapter
@@ -28,11 +29,17 @@ class HttpListener(hostname: String, port: Int, context: ActorContext[Nothing])
 
   private val sharding: ClusterSharding = ClusterSharding(context.system)
 
+  private val replicator: ActorRef[Replicator.Command] = DistributedData(
+    context.system).replicator
+
   override val shardRegion: ActorRef[ShardingEnvelope[RequestMessage]] =
     sharding.init(
-      Entity(PublicEventEntity.TypeKey)(createBehavior = entityContext =>
-        PublicEventEntity(
-          PublicEventsDirectory.idGenerator(entityContext.entityId))))
+      Entity(PublicEventEntity.TypeKey)(
+        createBehavior = entityContext =>
+          PublicEventEntity(
+            PublicEventsDirectory.idGenerator(entityContext.entityId),
+            replicator: ActorRef[Replicator.Command]
+        )))
 
   override val shardState: ActorRef[ClusterShardingQuery] = sharding.shardState
 
